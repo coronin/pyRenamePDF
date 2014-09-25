@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 
-# Script to rename all PDF files in the folder, basded on DOI info
+# Rename all PDF files in the folder, basded on DOI info ; v0.13
 # (c) Liang Cai, 2014
 # http://about.me/cail
 
-# v0.13
 
 import os, os.path, shutil, re, unicodedata, PyPDF2
 from time import gmtime, strftime, sleep
@@ -12,7 +11,7 @@ from time import gmtime, strftime, sleep
 # change the following to False if you want to copy renamed files
 moveMode = True
 
-# very inspired by pythonquery.py
+# inspired by pythonquery.py
 # Simple script to query pubmed for a DOI
 # (c) Simon Greenhill, 2007
 # http://simon.net.nz/
@@ -200,7 +199,7 @@ if __name__ == '__main__' :
     from sys import argv, exit
 if len(argv) == 1 :
     print 'Usage: %s <folder>' % argv[0]
-    print ' e.g. %s ./' % argv[0]
+    print '  e.g. %s ./' % argv[0]
     exit()
 
 if os.path.exists(os.path.join(argv[1],'renamed/')) == 0 :
@@ -226,7 +225,7 @@ for fileindir in os.listdir(argv[1]) :
             knownFileCheck = knownFileCheck * 0
             break
     if not knownFileCheck :
-        print 'known not PDF format, skip'
+        print '  known not PDF format, skip'
         continue
 
     FileCounter = FileCounter + 1
@@ -238,10 +237,10 @@ for fileindir in os.listdir(argv[1]) :
         while not line:
             line = readNextEndLine(testfile)
         if line[:5] != '%%EOF' :
-            # print 'PyPDF2 EOF marker not found'
+            # print '  PyPDF2 EOF marker not found'
             continue
     else:
-        # print 'not binary file'
+        # print '  not binary file'
         continue
     testfile.close()
     print input
@@ -250,7 +249,7 @@ for fileindir in os.listdir(argv[1]) :
         extractfull = getPDFContent(input).encode('ascii', 'xmlcharrefreplace')
         # print extractfull[:6999] # enable for debug
     except:
-        print '$$ PyPDF2 Error', input
+        print '  PyPDF2 Error', input
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode :
             shutil.move(input, '%s' % newFilename)
@@ -258,7 +257,7 @@ for fileindir in os.listdir(argv[1]) :
             shutil.copy2(input, '%s' % newFilename)
         continue # break
 
-    extractDOI = re.search('(?<=doi)/?:?\s?[0-9\.]{7}/\S*[0-9]', extractfull.lower().replace('&#338;','-').replace('&#169;',''))
+    extractDOI = re.search('(?<=doi)/?:?\s?\d{2}\.\d{4}/\S*[0-9a-z]', extractfull.lower().replace('&#338;','-').replace('&#169;',''))
     if not extractDOI :
         extractDOI = re.search('(?<=doi).?10.1073/pnas\.\d+', extractfull.lower().replace('pnas','/pnas')) # PNAS fix
     if not extractDOI :
@@ -289,7 +288,7 @@ for fileindir in os.listdir(argv[1]) :
             cleanDOI = cleanDOI[0:(8+i)]
 
     else:
-        print '$$ Doi Fail Extract', input
+        print '  Doi Fail Extract', input
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode:
             shutil.move(input, '%s' % newFilename)
@@ -312,7 +311,7 @@ for fileindir in os.listdir(argv[1]) :
             cleanDOI = cleanDOI[0:-1] # most nature articles
             sleep(2)
     if trimCycle > 4 :
-        print '$$ Doi Fail Match', input
+        print '  Doi Fail Match', input
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode:
             shutil.move(input, '%s' % newFilename)
@@ -322,7 +321,7 @@ for fileindir in os.listdir(argv[1]) :
 
     while not citation :
         sleep(10)
-        print 'internet not connected? try hard to access the pubmed'
+        print '  No internet? try hard to access the pubmed'
         citation = get_citation_from_doi(cleanDOI)
 
     try:
