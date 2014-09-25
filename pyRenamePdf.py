@@ -124,7 +124,7 @@ def text_output(xml):
 
     title = xmldoc.getElementsByTagName('ArticleTitle')[0]
     title = title.childNodes[0].data[:-1].encode('ascii','ignore')
-    LOGFILE.writelines(title + '\n')
+    LOGFILE.writelines(title + '\r\n')
 
     authors = xmldoc.getElementsByTagName('AuthorList')[0]
     authors = authors.getElementsByTagName('Author')
@@ -144,7 +144,7 @@ def text_output(xml):
             authorLong = author.getElementsByTagName('CollectiveName')[0].childNodes[0].data.encode('ascii','ignore')
             author = authorLong
         authorlist.append(authorLong)
-    LOGFILE.writelines(', '.join(authorlist) + '\n')
+    LOGFILE.writelines(', '.join(authorlist) + '\r\n')
 
     journalinfo = xmldoc.getElementsByTagName('Journal')[0]
     if journalinfo.getElementsByTagName('ISOAbbreviation') :
@@ -161,16 +161,16 @@ def text_output(xml):
         month = journalinfo.getElementsByTagName('Month')[0].childNodes[0].data
     except:
         month = 'na'
-    LOGFILE.writelines('%s %s, %s\n' % (year, month, journal))
+    LOGFILE.writelines('%s %s, %s\r\n' % (year, month, journal))
 
     if xmldoc.getElementsByTagName('AbstractText') :
         abstract = xmldoc.getElementsByTagName('AbstractText')[0]
         abstract = abstract.childNodes[0].data.encode('ascii','ignore')
-        LOGFILE.writelines(abstract + '\n')
+        LOGFILE.writelines(abstract + '\r\n')
 
     pmid = xmldoc.getElementsByTagName('PMID')[0]
     pmid = pmid.childNodes[0].data[:-1]
-    LOGFILE.writelines('PMID:' + pmid + '\n')
+    LOGFILE.writelines('PMID:' + pmid + '\r\n')
 
     print title
     print authorlist[0], ',', authorlist[-1]
@@ -212,25 +212,25 @@ LOGFILE = open(os.path.join(argv[1],'log-' + today + '.txt'), 'ab')
 FileCounter = 0
 
 for fileindir in os.listdir(argv[1]) :
-    input = os.path.join(argv[1],fileindir)
-    # print input # enable for debug
+    file_name = os.path.join(argv[1], fileindir)
+    # print file_name # enable for debug
 
-    if os.path.isdir(input) :
+    if os.path.isdir(file_name) :
         continue
 
     knownFileList = ['\.dmg$','\.bin$','\.cue$','\.iso$','\.toast$','\.bz2$','\.tar$','\.t?gz$','\.pkg$','\.mov$','\.avi$','\.rm(vb)?$','\.kmv$','\.mp4$','\.mp3$','\.zip$','\.rar$','\.exe$','\.docx?$','\.xlsx?$','\.pptx?$','\.jpe?g$','\.gif$','\.png$','\.ps$','\.ai$','\.eps$','\.xpi$','\.qt$','\.tiff?$','\.torrent$']
     knownFileCheck = 1
     for knownFile in knownFileList :
-        if re.search(knownFile,input.lower()) :
+        if re.search(knownFile, file_name.lower()) :
             knownFileCheck = knownFileCheck * 0
             break
     if not knownFileCheck :
-        print '  known not PDF format, skip'
+        print '  skip a known non-PDF file'
         continue
 
     FileCounter = FileCounter + 1
 
-    testfile = open(input, 'rb')
+    testfile = open(file_name, 'rb')
     if is_binary(testfile.read()) :
         testfile.seek(-1, 2)
         line = ''
@@ -240,24 +240,26 @@ for fileindir in os.listdir(argv[1]) :
             # print '  PyPDF2 EOF marker not found'
             continue
     else:
-        # print '  not binary file'
+        # print '  not a binary file'
         continue
     testfile.close()
-    print input
+    print file_name
 
     try:
-        extractfull = getPDFContent(input).encode('ascii', 'xmlcharrefreplace')
+        extractfull = getPDFContent(file_name).encode('ascii', 'xmlcharrefreplace')
         # print extractfull[:6999] # enable for debug
     except:
-        print '  PyPDF2 Error', input
+        print '  PyPDF2 Error'
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode :
-            shutil.move(input, '%s' % newFilename)
+            shutil.move(file_name, '%s' % newFilename)
         else:
-            shutil.copy2(input, '%s' % newFilename)
+            shutil.copy2(file_name, '%s' % newFilename)
         continue # break
 
-    extractDOI = re.search('(?<=doi)/?:?\s?\d{2}\.\d{4}/\S*[0-9a-z]', extractfull.lower().replace('&#338;','-').replace('&#169;',''))
+    extractDOI = re.search('(?<=doi)/?:?\s?\d{2}\.\d{4}/\S*[0-9]', extractfull.lower().replace('&#338;','-').replace('&#169;','')) # @@@@ \d{2}\.\d{4}/\S*[0-9a-zA-Z]
+    if not extractDOI :
+        extractDOI = re.search('(?<=http://dx.doi.org/)\d{2}\.\d{4}/\S*[0-9]', extractfull.lower())
     if not extractDOI :
         extractDOI = re.search('(?<=doi).?10.1073/pnas\.\d+', extractfull.lower().replace('pnas','/pnas')) # PNAS fix
     if not extractDOI :
@@ -266,14 +268,16 @@ for fileindir in os.listdir(argv[1]) :
 
     if extractDOI :
         cleanDOI = extractDOI.group(0).replace(':','').replace(' ','')
-        if re.search('^/', cleanDOI) :
+        if cleanDOI.startswith('/'):
             cleanDOI = cleanDOI[1:]
 
-        if re.search('^10.1096', cleanDOI) : # FABSE J fix
+        if cleanDOI.startswith('10.1096'): # FABSE J fix
             cleanDOI = cleanDOI[:20]
-
-        if re.search('^10.1083', cleanDOI) : # JCB second fix
+        if cleanDOI.startswith('10.1083'): # JCB second fix
             cleanDOI = cleanDOI[:21]
+        if cleanDOI.startswith('10.1038') and cleanDOI.endswith('nature'): # Nature series fix
+            cleanDOI = cleanDOI[:-6]
+
 
         if len(cleanDOI) > 40 :
             cleanDOItemp = re.sub(r'\d\.\d', '000', cleanDOI)
@@ -288,16 +292,16 @@ for fileindir in os.listdir(argv[1]) :
             cleanDOI = cleanDOI[0:(8+i)]
 
     else:
-        print '  Doi Fail Extract', input
+        print '  fail to extract DOI'
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode:
-            shutil.move(input, '%s' % newFilename)
+            shutil.move(file_name, '%s' % newFilename)
         else:
-            shutil.copy2(input, '%s' % newFilename)
+            shutil.copy2(file_name, '%s' % newFilename)
         continue # break
 
     print cleanDOI
-    LOGFILE.writelines('dox:' + cleanDOI + '\n')
+    LOGFILE.writelines('dox:' + cleanDOI + '\r\n')
 
     getDOI = 1
     trimCycle = 0
@@ -311,34 +315,35 @@ for fileindir in os.listdir(argv[1]) :
             cleanDOI = cleanDOI[0:-1] # most nature articles
             sleep(2)
     if trimCycle > 4 :
-        print '  Doi Fail Match', input
+        print '  fail to confirm DOI'
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode:
-            shutil.move(input, '%s' % newFilename)
+            shutil.move(file_name, '%s' % newFilename)
         else:
-            shutil.copy2(input, '%s' % newFilename)
+            shutil.copy2(file_name, '%s' % newFilename)
         continue # break
 
     while not citation :
+        print '  No internet? will try in 10 seconds'
         sleep(10)
-        print '  No internet? try hard to access the pubmed'
         citation = get_citation_from_doi(cleanDOI)
 
     try:
         doi_data = text_output(citation)
     except:
+        print '  ignore due to missing DOI info'
         continue
 
     newFilename = os.path.join(argv[1], 'renamed/', '%s.pdf' % doi_data)
     if os.path.isfile(newFilename) :
         if moveMode :
-            shutil.move(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
+            shutil.move(file_name, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
         else:
-            shutil.copy2(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
+            shutil.copy2(file_name, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
     else:
         if moveMode :
-            shutil.move(input, '%s' % newFilename)
+            shutil.move(file_name, '%s' % newFilename)
         else:
-            shutil.copy2(input, '%s' % newFilename)
+            shutil.copy2(file_name, '%s' % newFilename)
 
-    LOGFILE.writelines('\n\n')
+    LOGFILE.writelines('\r\n\r\n')
