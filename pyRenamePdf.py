@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
 # Script to rename all PDF files in the folder, basded on DOI info
-# (c) Liang Cai, 2010
-# http://en.dogeno.us
-# v0.12
-import os, os.path, shutil, re, unicodedata, pyPdf
+# (c) Liang Cai, 2014
+# http://about.me/cail
+
+# v0.13
+
+import os, os.path, shutil, re, unicodedata, PyPDF2
 from time import gmtime, strftime, sleep
 
-# change the following to 0 if you want to copy renamed files
-moveMode = 1
+# change the following to False if you want to copy renamed files
+moveMode = True
 
 # very inspired by pythonquery.py
 # Simple script to query pubmed for a DOI
@@ -52,7 +54,7 @@ def is_binary(buff):
         if all_text == 4096 :
             break
     # print non_text, all_text # enable for debug
-    if non_text > all_text * 0.0009 : # 0.0009 is very arbitrary 
+    if non_text > all_text * 0.0009 : # 0.0009 is very arbitrary
         return 1
     else:
         return 0
@@ -63,7 +65,7 @@ def getPDFContent(path):
     content = ''
     # Load PDF into pyPDF
     fileStream = file(path, 'rb')
-    pdf = pyPdf.PdfFileReader(fileStream)
+    pdf = PyPDF2.PdfFileReader(fileStream)
     for i in range(0, pdf.getNumPages()):
         # Extract text from page and add to content
         content += pdf.getPage(i).extractText() + ' '
@@ -183,7 +185,7 @@ def text_output(xml):
         except:
             output = author.replace(' ','') + '_' + authors[0].getElementsByTagName('CollectiveName')[0].childNodes[0].data.encode('ascii','ignore').replace(' ','') + '-' + journal.replace('.','').replace(' ','') + '_' + year
     else:
-        output = author.replace(' ','') + '-' + journal.replace('.','').replace(' ','') + '_' + year  
+        output = author.replace(' ','') + '-' + journal.replace('.','').replace(' ','') + '_' + year
 
     return output
 
@@ -211,7 +213,7 @@ LOGFILE = open(os.path.join(argv[1],'log-' + today + '.txt'), 'ab')
 FileCounter = 0
 
 for fileindir in os.listdir(argv[1]) :
-    input = os.path.join(argv[1],fileindir)    
+    input = os.path.join(argv[1],fileindir)
     # print input # enable for debug
 
     if os.path.isdir(input) :
@@ -225,8 +227,8 @@ for fileindir in os.listdir(argv[1]) :
             break
     if not knownFileCheck :
         print 'known not PDF format, skip'
-        continue   
-    
+        continue
+
     FileCounter = FileCounter + 1
 
     testfile = open(input, 'rb')
@@ -236,7 +238,7 @@ for fileindir in os.listdir(argv[1]) :
         while not line:
             line = readNextEndLine(testfile)
         if line[:5] != '%%EOF' :
-            # print 'pyPdf EOF marker not found'
+            # print 'PyPDF2 EOF marker not found'
             continue
     else:
         # print 'not binary file'
@@ -248,7 +250,7 @@ for fileindir in os.listdir(argv[1]) :
         extractfull = getPDFContent(input).encode('ascii', 'xmlcharrefreplace')
         # print extractfull[:6999] # enable for debug
     except:
-        print '$$ pyPdf Error', input
+        print '$$ PyPDF2 Error', input
         newFilename = os.path.join(argv[1], 'untouched/', fileindir)
         if moveMode :
             shutil.move(input, '%s' % newFilename)
@@ -262,7 +264,7 @@ for fileindir in os.listdir(argv[1]) :
     if not extractDOI :
         extractDOI = re.search('10\.1083/jcb\.\d{9}', extractfull.lower()) # JCB fix
     # print extractDOI # enable for debug
- 
+
     if extractDOI :
         cleanDOI = extractDOI.group(0).replace(':','').replace(' ','')
         if re.search('^/', cleanDOI) :
@@ -294,7 +296,7 @@ for fileindir in os.listdir(argv[1]) :
         else:
             shutil.copy2(input, '%s' % newFilename)
         continue # break
-    
+
     print cleanDOI
     LOGFILE.writelines('dox:' + cleanDOI + '\n')
 
@@ -323,12 +325,17 @@ for fileindir in os.listdir(argv[1]) :
         print 'internet not connected? try hard to access the pubmed'
         citation = get_citation_from_doi(cleanDOI)
 
-    newFilename = os.path.join(argv[1], 'renamed/', '%s.pdf' % text_output(citation))
+    try:
+        doi_data = text_output(citation)
+    except:
+        continue
+
+    newFilename = os.path.join(argv[1], 'renamed/', '%s.pdf' % doi_data)
     if os.path.isfile(newFilename) :
         if moveMode :
-            shutil.move(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (text_output(citation), FileCounter)))
+            shutil.move(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
         else:
-            shutil.copy2(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (text_output(citation), FileCounter)))
+            shutil.copy2(input, os.path.join(argv[1], 'renamed/', '%s_%s.pdf' % (doi_data, FileCounter)))
     else:
         if moveMode :
             shutil.move(input, '%s' % newFilename)

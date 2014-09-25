@@ -34,11 +34,12 @@ Implementation of stream filters for PDF.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
-from utils import PdfReadError
-try:
+from .utils import PdfReadError, ord_, chr_
+from sys import version_info
+if version_info < ( 3, 0 ):
     from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
+else:
+    from io import StringIO
 
 try:
     import zlib
@@ -101,7 +102,11 @@ class FlateDecode(object):
         data = decompress(data)
         predictor = 1
         if decodeParms:
-            predictor = decodeParms.get("/Predictor", 1)
+            try:
+                predictor = decodeParms.get("/Predictor", 1)
+            except AttributeError:
+                pass    # usually an array with a null object was read
+            
         # predictor 1 == no predictor
         if predictor != 1:
             columns = decodeParms["/Columns"]
@@ -112,8 +117,8 @@ class FlateDecode(object):
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
                 prev_rowdata = (0,) * rowlength
-                for row in xrange(len(data) / rowlength):
-                    rowdata = [ord(x) for x in data[(row*rowlength):((row+1)*rowlength)]]
+                for row in range(len(data) // rowlength):
+                    rowdata = [ord_(x) for x in data[(row*rowlength):((row+1)*rowlength)]]
                     filterByte = rowdata[0]
                     if filterByte == 0:
                         pass
@@ -160,6 +165,87 @@ class ASCIIHexDecode(object):
         return retval
     decode = staticmethod(decode)
 
+class LZWDecode(object):
+    """Taken from:
+    http://www.java2s.com/Open-Source/Java-Document/PDF/PDF-Renderer/com/sun/pdfview/decode/LZWDecode.java.htm
+    """
+    class decoder(object):
+        def __init__(self, data):
+            self.STOP=257
+            self.CLEARDICT=256
+            self.data=data
+            self.bytepos=0
+            self.bitpos=0
+            self.dict=[""]*4096
+            for i in range(256):
+                self.dict[i]=chr(i)
+            self.resetDict()
+
+        def resetDict(self):
+            self.dictlen=258
+            self.bitspercode=9
+                
+
+        def nextCode(self):
+            fillbits=self.bitspercode
+            value=0
+            while fillbits>0 :
+                if self.bytepos >= len(self.data):
+                    return -1
+                nextbits=ord(self.data[self.bytepos])
+                bitsfromhere=8-self.bitpos
+                if bitsfromhere>fillbits:
+                    bitsfromhere=fillbits
+                value |= (((nextbits >> (8-self.bitpos-bitsfromhere)) & 
+                           (0xff >> (8-bitsfromhere))) << 
+                          (fillbits-bitsfromhere))
+                fillbits -= bitsfromhere
+                self.bitpos += bitsfromhere
+                if self.bitpos >=8:
+                    self.bitpos=0
+                    self.bytepos = self.bytepos+1
+            return value
+
+        def decode(self):
+            """ algorithm derived from:
+            http://www.rasip.fer.hr/research/compress/algorithms/fund/lz/lzw.html
+            and the PDFReference
+            """
+            cW = self.CLEARDICT;
+            baos=""
+            while True:
+                pW = cW;
+                cW = self.nextCode();
+                if cW == -1:
+                    raise PdfReadError("Missed the stop code in LZWDecode!")
+                if cW == self.STOP:
+                    break;
+                elif cW == self.CLEARDICT:
+                    self.resetDict();
+                elif pW == self.CLEARDICT:
+                    baos+=self.dict[cW]
+                else:
+                    if cW < self.dictlen:
+                        baos += self.dict[cW]
+                        p=self.dict[pW]+self.dict[cW][0]
+                        self.dict[self.dictlen]=p
+                        self.dictlen+=1
+                    else:
+                        p=self.dict[pW]+self.dict[pW][0]
+                        baos+=p
+                        self.dict[self.dictlen] = p;
+                        self.dictlen+=1
+                    if (self.dictlen >= (1 << self.bitspercode) - 1 and 
+                        self.bitspercode < 12):
+                        self.bitspercode+=1
+            return baos
+
+
+    
+    @staticmethod
+    def decode(data,decodeParams=None):
+        return LZWDecode.decoder(data).decode()
+
 class ASCII85Decode(object):
     def decode(data, decodeParms=None):
         retval = ""
@@ -179,6 +265,7 @@ class ASCII85Decode(object):
             elif c == 'z':
                 assert len(group) == 0
                 retval += '\x00\x00\x00\x00'
+                x += 1
                 continue
             elif c == "~" and data[x+1] == ">":
                 if len(group) != 0:
@@ -213,7 +300,7 @@ class ASCII85Decode(object):
     decode = staticmethod(decode)
 
 def decodeStreamData(stream):
-    from generic import NameObject
+    from .generic import NameObject
     filters = stream.get("/Filter", ())
     if len(filters) and not isinstance(filters[0], NameObject):
         # we have a single filter instance
@@ -224,6 +311,8 @@ def decodeStreamData(stream):
             data = FlateDecode.decode(data, stream.get("/DecodeParms"))
         elif filterType == "/ASCIIHexDecode":
             data = ASCIIHexDecode.decode(data)
+        elif filterType == "/LZWDecode":
+            data = LZWDecode.decode(data, stream.get("/DecodeParms"))
         elif filterType == "/ASCII85Decode":
             data = ASCII85Decode.decode(data)
         elif filterType == "/Crypt":
@@ -236,17 +325,3 @@ def decodeStreamData(stream):
             # unsupported filter
             raise NotImplementedError("unsupported filter %s" % filterType)
     return data
-
-if __name__ == "__main__":
-    assert "abc" == ASCIIHexDecode.decode('61\n626\n3>')
-
-    ascii85Test = """
-     <~9jqo^BlbD-BleB1DJ+*+F(f,q/0JhKF<GL>Cj@.4Gp$d7F!,L7@<6@)/0JDEF<G%<+EV:2F!,
-     O<DJ+*.@<*K0@<6L(Df-\\0Ec5e;DffZ(EZee.Bl.9pF"AGXBPCsi+DGm>@3BB/F*&OCAfu2/AKY
-     i(DIb:@FD,*)+C]U=@3BN#EcYf8ATD3s@q?d$AftVqCh[NqF<G:8+EV:.+Cf>-FD5W8ARlolDIa
-     l(DId<j@<?3r@:F%a+D58'ATD4$Bl@l3De:,-DJs`8ARoFb/0JMK@qB4^F!,R<AKZ&-DfTqBG%G
-     >uD.RTpAKYo'+CT/5+Cei#DII?(E,9)oF*2M7/c~>
-    """
-    ascii85_originalText="Man is distinguished, not only by his reason, but by this singular passion from other animals, which is a lust of the mind, that by a perseverance of delight in the continued and indefatigable generation of knowledge, exceeds the short vehemence of any carnal pleasure."
-    assert ASCII85Decode.decode(ascii85Test) == ascii85_originalText
-
